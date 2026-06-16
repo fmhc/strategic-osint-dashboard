@@ -1,0 +1,17 @@
+{
+  "name": "Strategic OSINT Dashboard",
+  "short_name": "OSINT Command",
+  "description": "Real-time global intelligence monitoring system",
+  "theme_color": "#00c8ff",
+  "background_color": "#000408",
+  "display": "standalone",
+  "start_url": "/",
+  "scope": "/",
+  "icons": [
+    {
+      "src": "favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

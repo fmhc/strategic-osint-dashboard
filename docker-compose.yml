@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  # OSINT Backend
+  osint-backend:
+    build: .
+    container_name: osint-backend
+    ports:
+      - "127.0.0.1:3333:3333"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - PORT=3333
+      # In Docker, point host-side LLM/Ollama endpoints at host.docker.internal
+      # (overrides the .env values, which usually use localhost/127.0.0.1).
+      - LLM_BASE_URL=http://host.docker.internal:11434/v1
+      - OLLAMA_URL=http://host.docker.internal:11434
+    volumes:
+      - ./data:/app/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    networks:
+      - osint-network
+
+  # Prometheus für Metriken
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: osint-prometheus
+    ports:
+      - "127.0.0.1:9091:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    restart: unless-stopped
+    networks:
+      - osint-network
+
+  # Grafana Dashboard
+  grafana:
+    image: grafana/grafana:latest
+    container_name: osint-grafana
+    ports:
+      - "127.0.0.1:3002:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-changeme}
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource,grafana-worldmap-panel
+      - GF_SERVER_ROOT_URL=http://localhost:3001
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+      - osint-backend
+    networks:
+      - osint-network
+
+networks:
+  osint-network:
+    driver: bridge
+
+volumes:
+  prometheus-data:
+  grafana-data:
+

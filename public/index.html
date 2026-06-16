@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎯 OSINT Command Center</title>
+    
+    <!-- Cesium 1.113 — self-hosted (offline / DSGVO, no CDN). CESIUM_BASE_URL must
+         be set (inline, before the deferred Cesium.js) so it can locate its
+         Workers/Assets/Widgets. Run scripts/fetch-cesium.sh to (re)populate. -->
+    <script>window.CESIUM_BASE_URL = '/vendor/cesium/';</script>
+    <script defer src="/vendor/cesium/Cesium.js"></script>
+    <link href="/vendor/cesium/Widgets/widgets.css" rel="stylesheet">
+
+    <!-- Socket.io (defer to keep execution order: Cesium -> socket.io -> app.js) -->
+    <script defer src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
+    
+    <!-- Google Fonts - Better readability -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Orbitron:wght@400;500;700;900&display=swap" rel="stylesheet">
+
+    <!-- Favicon -->
+    <link rel="icon" href="/favicon.ico" sizes="any">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+
+    <link rel="stylesheet" href="styles.css">
+</head>
+</head>
+<body>
+    <!-- Cesium Globe -->
+    <div id="cesiumContainer"></div>
+    
+    <!-- Header -->
+    <header class="header overlay">
+        <div class="logo">OSINT COMMAND</div>
+        <div class="status-indicators">
+            <div class="status-item">
+                <span class="status-dot live" id="conn-status"></span>
+                <span id="conn-text">CONNECTING</span>
+            </div>
+            <div class="status-item">
+                <span>✈</span>
+                <span id="data-sources">0 TRACKED</span>
+            </div>
+            <div class="status-item">
+                <span>🔍</span>
+                <span id="zoom-level">GLOBAL</span>
+            </div>
+            <div class="status-item">
+                <span>🚢</span>
+                <span id="maritime-count">0 MARITIME</span>
+            </div>
+        </div>
+    </header>
+    
+    <!-- Left Panel -->
+    <div class="left-panel overlay">
+        <!-- Threat Assessment -->
+        <div class="card">
+            <div class="card-header">
+                <span>⚠ THREAT LEVEL</span>
+            </div>
+            <div class="card-body" style="text-align: center;">
+                <div class="metric-big normal" id="threat-level">NORMAL</div>
+                <div class="metric-label" id="threat-desc">ROUTINE OPERATIONS</div>
+            </div>
+        </div>
+        
+        <!-- SIGINT -->
+        <div class="card">
+            <div class="card-header clickable" onclick="openModal('gps')">
+                <span>📡 GPS INTERFERENCE</span>
+                <span class="badge" id="sigint-badge">--</span>
+            </div>
+            <div class="card-body">
+                <div class="stats-grid">
+                    <div class="stat-box">
+                        <div class="stat-value" id="gps-jam">0</div>
+                        <div class="stat-label">ZONES</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value" id="gps-regions">0</div>
+                        <div class="stat-label">REGIONS</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Seismic -->
+        <div class="card">
+            <div class="card-header clickable" onclick="openModal('seismic')">
+                <span>🌍 SEISMIC 24H</span>
+                <span class="badge badge-normal" id="seismic-badge">0</span>
+            </div>
+            <div class="card-body">
+                <div class="stats-grid">
+                    <div class="stat-box">
+                        <div class="stat-value" id="quake-count">0</div>
+                        <div class="stat-label">EVENTS</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value" id="quake-max">0</div>
+                        <div class="stat-label">MAX MAG</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Space Weather -->
+        <div class="card">
+            <div class="card-header clickable" onclick="openModal('weather')">
+                <span>☀ SPACE WEATHER</span>
+                <span class="badge" id="space-badge">--</span>
+            </div>
+            <div class="card-body">
+                <div class="stats-grid">
+                    <div class="stat-box">
+                        <div class="stat-value" id="kp-index">--</div>
+                        <div class="stat-label">Kp</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value" id="flares">0</div>
+                        <div class="stat-label">FLARES</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+    </div>
+    
+    <!-- Right Panel -->
+    <div class="right-panel overlay">
+        <!-- Strategic Flights -->
+        <div class="card">
+            <div class="card-header clickable" onclick="openModal('flights')">
+                <span>✈ FLIGHTS</span>
+                <span class="badge badge-normal" id="flights-badge">0</span>
+            </div>
+            <div class="card-body">
+                <div class="list-scroll" id="flights-list">Loading...</div>
+            </div>
+        </div>
+        
+        <!-- Live Alerts -->
+        <div class="card">
+            <div class="card-header clickable" onclick="openModal('alerts')">
+                <span>🚨 ALERTS</span>
+                <span class="badge" id="alerts-badge">0</span>
+            </div>
+            <div class="card-body">
+                <div class="list-scroll" id="alerts-list">No alerts</div>
+            </div>
+        </div>
+        
+        <!-- AI Analysis -->
+        <div class="card">
+            <div class="card-header">
+                <span>🤖 AI ANALYSIS</span>
+                <span class="badge" id="ai-badge">--</span>
+            </div>
+            <div class="card-body">
+                <div id="ai-assessment" style="font-size: 0.78rem; line-height: 1.4;">
+                    Waiting for Ollama...
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Bottom Panel - News -->
+    <div class="bottom-panel overlay">
+        <div class="card" style="height: 100%;">
+            <div class="card-header clickable" onclick="openModal('news')">
+                <span>📰 INTEL NEWS</span>
+                <span class="badge badge-normal" id="news-badge">0</span>
+            </div>
+            <div class="card-body" style="height: calc(100% - 45px); overflow-y: auto;">
+                <div id="news-list">Loading...</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Globe Controls -->
+    <div class="globe-controls overlay">
+        <button class="globe-btn" onclick="flyToRegion('ukraine')">🇺🇦 UKRAINE</button>
+        <button class="globe-btn" onclick="flyToRegion('iran')">🇮🇷 IRAN</button>
+        <button class="globe-btn" onclick="flyToRegion('israel')">🇮🇱 ISRAEL</button>
+        <button class="globe-btn" onclick="flyToRegion('taiwan')">🇹🇼 TAIWAN</button>
+        <button class="globe-btn" onclick="flyToRegion('greenland')">🇬🇱 GREENLAND</button>
+        <button class="globe-btn" onclick="flyToRegion('cuba')">🇨🇺 CUBA</button>
+        <button class="globe-btn" onclick="flyToRegion('germany')" title="Germany Focus">🇩🇪 GERMANY</button>
+        <button class="globe-btn" onclick="flyToHamburg()" title="Hamburg Port">⚓ HAMBURG</button>
+        <button class="globe-btn reset-btn" onclick="resetView()">⟲ RESET</button>
+        <span style="width:8px"></span>
+        <select class="globe-btn" id="highlight-mode" onchange="setHighlightMode(this.value)" style="padding:4px 8px; min-width:100px;">
+            <option value="default">📊 DEFAULT</option>
+            <option value="network">🌐 NETWORK</option>
+            <option value="us_forces">🇺🇸 US FORCES</option>
+            <option value="russia">🇷🇺 RUSSIA</option>
+            <option value="china">🇨🇳 CHINA</option>
+            <option value="germany">🇩🇪 GERMANY</option>
+        </select>
+        <span style="width:15px"></span>
+        <button class="globe-btn" id="btn-platforms" onclick="toggleMaritimeLayer('platforms')" title="Oil Rigs & Platforms">🛢️ RIGS</button>
+        <button class="globe-btn" id="btn-cables" onclick="toggleMaritimeLayer('cables')" title="Submarine Cables">🔌 CABLES</button>
+        <button class="globe-btn" id="btn-vessels" onclick="toggleMaritimeLayer('aisVessels')" title="AIS Vessels">🚢 SHIPS</button>
+        <button class="globe-btn" id="btn-ixps" onclick="toggleLayer('ixps')" title="Internet Exchange Points">🌐 IXPs</button>
+        <button class="globe-btn" id="btn-dataflow" onclick="toggleDataFlow()" title="Data Flow Animation">⚡ FLOW</button>
+        <button class="globe-btn" id="btn-german-infra" onclick="toggleGermanInfraLayer()" title="German Infrastructure">🇩🇪 DE INFRA</button>
+        <button class="globe-btn" id="btn-disasters" onclick="toggleDisasters()" title="GDACS Disaster Alerts">🌋 DISASTERS</button>
+        <button class="globe-btn" id="btn-perf" onclick="togglePerfMode()" title="Performance mode (lower resolution for weaker GPUs)">⚡ PERF</button>
+        <span style="width:15px"></span>
+        <button class="globe-btn" onclick="toggleSettingsPanel()" title="Layer Settings">⚙️</button>
+        <button class="globe-btn" onclick="toggleHealthPanel()" title="Internet Health Status">🏥 HEALTH</button>
+        <button class="globe-btn" onclick="toggleEntitiesPanel()" title="Entities of Interest">🎯 ENTITIES</button>
+    </div>
+
+    <!-- Settings Panel (hidden by default) -->
+    <div id="settings-panel" class="overlay" style="display:none; position:fixed; top:70px; right:350px; width:280px; background:var(--bg-panel); border:1px solid var(--border); border-radius:4px; padding:12px; z-index:100;">
+        <div style="font-family:var(--font-display); font-size:0.75rem; color:var(--accent); margin-bottom:10px; display:flex; justify-content:space-between;">
+            <span>LAYER SETTINGS</span>
+            <span onclick="toggleSettingsPanel()" style="cursor:pointer;">✕</span>
+        </div>
+        <div id="layer-settings-content" style="font-size:0.7rem;"></div>
+        <div style="margin-top:10px; padding-top:8px; border-top:1px solid var(--border); font-size:0.65rem; color:var(--text-dim);">
+            <span id="perf-stats"></span>
+        </div>
+    </div>
+
+    <!-- Internet Health Panel -->
+    <div id="health-panel" class="overlay" style="display:none; position:fixed; top:70px; left:15px; width:320px; background:var(--bg-panel); border:1px solid var(--border); border-radius:4px; z-index:100;">
+        <div style="padding:12px; border-bottom:1px solid var(--border);">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span style="font-family:var(--font-display); font-size:0.8rem; color:var(--accent);">🏥 INTERNET HEALTH</span>
+                <span onclick="toggleHealthPanel()" style="cursor:pointer; font-size:0.9rem;">✕</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:10px; margin-top:8px;">
+                <div id="health-score" style="font-size:2rem; font-weight:bold; color:#00ff88;">--</div>
+                <div>
+                    <div id="health-status" style="font-size:0.75rem; text-transform:uppercase;">Loading...</div>
+                    <div id="health-updated" style="font-size:0.6rem; color:var(--text-dim);">--</div>
+                </div>
+            </div>
+        </div>
+        <div style="padding:12px; max-height:400px; overflow-y:auto;">
+            <div style="font-size:0.7rem; color:var(--text-dim); margin-bottom:8px;">ACTIVE ISSUES</div>
+            <div id="health-issues" style="font-size:0.65rem;"></div>
+
+            <div style="font-size:0.7rem; color:var(--text-dim); margin:12px 0 8px 0;">CABLE STATUS</div>
+            <div id="health-cables" style="font-size:0.65rem;"></div>
+
+            <div style="font-size:0.7rem; color:var(--text-dim); margin:12px 0 8px 0;">IXP CONNECTIONS</div>
+            <div id="health-ixp-connections" style="font-size:0.65rem;"></div>
+
+            <div style="margin-top:12px; padding-top:8px; border-top:1px solid var(--border);">
+                <div style="display:flex; justify-content:space-between; font-size:0.65rem; color:var(--text-dim);">
+                    <span>Data Flow: <span id="dataflow-status" style="color:var(--accent);">ON</span></span>
+                    <span>Arcs: <span id="dataflow-arcs">0</span> | Packets: <span id="dataflow-packets">0</span></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Entities of Interest Panel -->
+    <div id="entities-panel" class="overlay" style="display:none; position:fixed; top:70px; right:15px; width:350px; background:var(--bg-panel); border:1px solid var(--border); border-radius:4px; z-index:100; max-height:calc(100vh - 140px); overflow:hidden;">
+        <div style="padding:12px; border-bottom:1px solid var(--border);">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span style="font-family:var(--font-display); font-size:0.8rem; color:var(--accent);">🎯 ENTITIES OF INTEREST</span>
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <span class="badge badge-normal" id="entities-count">0</span>
+                    <span onclick="toggleEntitiesPanel()" style="cursor:pointer; font-size:0.9rem;">✕</span>
+                </div>
+            </div>
+        </div>
+        <div style="padding:12px; overflow-y:auto; max-height:calc(100vh - 220px);">
+            <!-- Priority Flights Section -->
+            <div style="margin-bottom:16px;">
+                <div style="font-size:0.7rem; color:var(--text-dim); margin-bottom:8px; display:flex; justify-content:space-between;">
+                    <span>✈️ PRIORITY FLIGHTS</span>
+                    <span id="priority-flights-count" style="color:var(--accent);">0</span>
+                </div>
+                <div id="priority-flights-list" style="font-size:0.65rem; max-height:150px; overflow-y:auto;"></div>
+            </div>
+
+            <!-- Priority Vessels Section -->
+            <div style="margin-bottom:16px;">
+                <div style="font-size:0.7rem; color:var(--text-dim); margin-bottom:8px; display:flex; justify-content:space-between;">
+                    <span>🚢 PRIORITY VESSELS</span>
+                    <span id="priority-vessels-count" style="color:var(--accent);">0</span>
+                </div>
+                <div id="priority-vessels-list" style="font-size:0.65rem; max-height:150px; overflow-y:auto;"></div>
+            </div>
+
+            <!-- German Waters Section -->
+            <div style="margin-bottom:16px;">
+                <div style="font-size:0.7rem; color:var(--text-dim); margin-bottom:8px; display:flex; justify-content:space-between;">
+                    <span>🇩🇪 GERMAN WATERS</span>
+                    <span id="german-waters-count" style="color:var(--accent);">0</span>
+                </div>
+                <div id="german-waters-vessels" style="font-size:0.65rem; max-height:120px; overflow-y:auto;"></div>
+            </div>
+
+            <!-- AI Analysis Section -->
+            <div style="border-top:1px solid var(--border); padding-top:12px;">
+                <div style="font-size:0.7rem; color:var(--text-dim); margin-bottom:8px; display:flex; justify-content:space-between;">
+                    <span>🤖 AI ANALYSIS</span>
+                    <span id="analysis-queue" style="color:var(--text-dim); font-size:0.6rem;">Queue: 0</span>
+                </div>
+                <div id="entity-analysis" style="font-size:0.65rem; max-height:200px; overflow-y:auto;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Stats Bar -->
+    <div class="quick-stats-bar" id="quick-stats-bar">
+        <div class="quick-stat" id="qs-health" title="Internet Health">
+            <span class="quick-stat-icon">🏥</span>
+            <span class="quick-stat-value" id="qs-health-val">--</span>
+            <span class="quick-stat-label">HEALTH</span>
+        </div>
+        <div class="quick-stat" id="qs-flights" title="Tracked Aircraft">
+            <span class="quick-stat-icon">✈️</span>
+            <span class="quick-stat-value" id="qs-flights-val">0</span>
+            <span class="quick-stat-label">FLIGHTS</span>
+        </div>
+        <div class="quick-stat" id="qs-vessels" title="AIS Vessels">
+            <span class="quick-stat-icon">🚢</span>
+            <span class="quick-stat-value" id="qs-vessels-val">0</span>
+            <span class="quick-stat-label">SHIPS</span>
+        </div>
+        <div class="quick-stat" id="qs-seismic" title="Seismic Events">
+            <span class="quick-stat-icon">🌋</span>
+            <span class="quick-stat-value" id="qs-seismic-val">0</span>
+            <span class="quick-stat-label">QUAKES</span>
+        </div>
+        <div class="quick-stat" id="qs-alerts" title="Active Alerts">
+            <span class="quick-stat-icon">⚠️</span>
+            <span class="quick-stat-value" id="qs-alerts-val">0</span>
+            <span class="quick-stat-label">ALERTS</span>
+        </div>
+    </div>
+
+    <!-- Collapsible Legend -->
+    <div class="legend overlay" id="legend-panel">
+        <div class="legend-header" onclick="toggleLegend()">
+            <span class="legend-header-title">LEGEND</span>
+            <span class="legend-toggle">▼</span>
+        </div>
+        <div class="legend-body">
+            <div class="legend-section">
+                <div class="legend-title">LOCATIONS</div>
+                <div class="legend-item"><span class="legend-dot" style="background: cyan;"></span> US Base</div>
+                <div class="legend-item"><span class="legend-dot" style="background: red;"></span> Carrier</div>
+                <div class="legend-item"><span class="legend-dot" style="background: #44ff88;"></span> Weather</div>
+            </div>
+            <div class="legend-section">
+                <div class="legend-title">ZONES</div>
+                <div class="legend-item"><span class="legend-box" style="background: rgba(255,40,40,0.35); border: 1px solid #f33;"></span> War Zone</div>
+                <div class="legend-item"><span class="legend-box" style="background: rgba(200,0,0,0.15); border: 1px solid #c00;"></span> Adversary</div>
+                <div class="legend-item"><span class="legend-box" style="background: rgba(255,0,255,0.3); border: 1px solid magenta;"></span> GPS Jam</div>
+            </div>
+            <div class="legend-section">
+                <div class="legend-title">EVENTS</div>
+                <div class="legend-item"><span class="legend-circle" style="border-color: orange;"></span> Earthquake</div>
+                <div class="legend-item"><span class="legend-circle" style="border-color: #ff0040;"></span> Alert</div>
+            </div>
+            <div class="legend-section">
+                <div class="legend-title">AIRCRAFT PRIORITY</div>
+                <div class="legend-item"><span class="legend-dot" style="background: #ff0040;"></span> Critical</div>
+                <div class="legend-item"><span class="legend-dot" style="background: orange;"></span> High</div>
+                <div class="legend-item"><span class="legend-dot" style="background: yellow;"></span> Medium</div>
+                <div class="legend-item"><span class="legend-dot" style="background: cyan;"></span> Low</div>
+            </div>
+            <div class="legend-section">
+                <div class="legend-title">GERMAN INFRA</div>
+                <div class="legend-item"><span class="legend-dot" style="background: #0044ff;"></span> USAF Base</div>
+                <div class="legend-item"><span class="legend-dot" style="background: blue;"></span> NATO Base</div>
+                <div class="legend-item"><span class="legend-dot" style="background: red;"></span> Nuclear Site</div>
+                <div class="legend-item"><span class="legend-dot" style="background: #00ccff;"></span> Harbour</div>
+                <div class="legend-item"><span class="legend-dot" style="background: #ff6600;"></span> Naval Base</div>
+            </div>
+            <div class="legend-section">
+                <div class="legend-title">MARITIME</div>
+                <div class="legend-item"><span class="legend-dot" style="background: #ffa000;"></span> Platform</div>
+                <div class="legend-item"><span class="legend-dot" style="background: #00ff88;"></span> Cable</div>
+                <div class="legend-item"><span class="legend-dot" style="background: #00ddff;"></span> Vessel</div>
+                <div class="legend-item"><span class="legend-dot" style="background: #ff00ff;"></span> IXP</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Hover Info Box -->
+    <div class="hover-info" id="hover-info">
+        <div class="hover-info-title" id="hover-title">--</div>
+        <div id="hover-content"></div>
+    </div>
+
+    <!-- IXP Detail Panel -->
+    <div class="ixp-detail-panel" id="ixp-detail-panel">
+        <div class="ixp-detail-header">
+            <span class="ixp-detail-title" id="ixp-detail-title">DE-CIX Frankfurt</span>
+            <button class="ixp-detail-close" onclick="hideIXPDetails()">&times;</button>
+        </div>
+        <div class="ixp-detail-body">
+            <!-- Basic Info -->
+            <div class="ixp-detail-section">
+                <div class="ixp-detail-section-title">Overview</div>
+                <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 12px;">
+                    <span class="ixp-tier-badge tier-1" id="ixp-tier-badge">
+                        <span>★</span> Tier 1
+                    </span>
+                    <span id="ixp-location" style="font-family: var(--font-mono); font-size: 0.8rem; color: var(--text-dim);">
+                        Frankfurt, Germany
+                    </span>
+                </div>
+                <div class="ixp-stat-grid">
+                    <div class="ixp-stat">
+                        <div class="ixp-stat-value" id="ixp-networks">900+</div>
+                        <div class="ixp-stat-label">Networks Connected</div>
+                    </div>
+                    <div class="ixp-stat">
+                        <div class="ixp-stat-value" id="ixp-traffic">12+ Tbps</div>
+                        <div class="ixp-stat-label">Peak Traffic</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Connected IXPs -->
+            <div class="ixp-detail-section">
+                <div class="ixp-detail-section-title">Nearby IXPs</div>
+                <div class="ixp-connections-list" id="ixp-nearby-ixps">
+                    <!-- Populated dynamically -->
+                </div>
+            </div>
+
+            <!-- Connected Cables -->
+            <div class="ixp-detail-section">
+                <div class="ixp-detail-section-title">Submarine Cables</div>
+                <div class="ixp-connections-list" id="ixp-nearby-cables">
+                    <!-- Populated dynamically -->
+                </div>
+            </div>
+
+            <!-- Links -->
+            <div class="ixp-detail-section" id="ixp-links-section">
+                <div class="ixp-detail-section-title">External Links</div>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <a class="ixp-link-btn" id="ixp-website-link" href="#" target="_blank">
+                        🌐 Website
+                    </a>
+                    <a class="ixp-link-btn" id="ixp-peeringdb-link" href="#" target="_blank">
+                        📊 PeeringDB
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Zoom Info -->
+    <div class="zoom-info overlay">
+        <span>SCROLL</span> zoom | <span>DRAG</span> rotate | <span>RIGHT-CLICK</span> imagery
+    </div>
+
+    <!-- Satellite Imagery Controls Panel -->
+    <div class="imagery-panel overlay" id="imagery-panel">
+        <div class="imagery-header" onclick="toggleImageryPanel()">
+            <span>SATELLITE IMAGERY</span>
+            <span class="imagery-toggle" id="imagery-toggle">-</span>
+        </div>
+        <div class="imagery-body">
+            <div class="imagery-row">
+                <div class="imagery-label">Imagery Source</div>
+                <select class="imagery-select" id="imagery-source" onchange="changeImagerySource()">
+                    <option value="carto_dark" selected>CartoDB Dark</option>
+                    <option value="carto_voyager_dark">CartoDB Voyager Dark</option>
+                    <option value="esri_dark_gray">ESRI Dark Gray</option>
+                    <option value="esri">ESRI Satellite</option>
+                    <option value="osm">OpenStreetMap</option>
+                    <option value="carto_light">CartoDB Light</option>
+                    <option value="stamen_toner">Stamen Toner</option>
+                    <option value="stamen_terrain">Stamen Terrain</option>
+                    <option value="opentopomap">OpenTopoMap</option>
+                    <option value="gibs_modis">NASA GIBS (MODIS)</option>
+                    <option value="gibs_viirs">NASA GIBS (VIIRS)</option>
+                    <option value="gibs_bluemarble">NASA Blue Marble</option>
+                    <option value="gibs_nightlights">NASA Night Lights</option>
+                </select>
+            </div>
+            <div class="imagery-row" id="gibs-date-row" style="display: none;">
+                <div class="imagery-label">GIBS Date</div>
+                <input type="date" class="imagery-date" id="gibs-date" onchange="changeGIBSDate()">
+            </div>
+            <div class="imagery-row">
+                <div class="imagery-label">Strategic Zone</div>
+                <select class="imagery-select" id="zone-select" onchange="flyToZone()">
+                    <option value="">-- Select Zone --</option>
+                    <option value="hormuz">Strait of Hormuz</option>
+                    <option value="ukraine">Ukraine Frontlines</option>
+                    <option value="taiwan">Taiwan Strait</option>
+                    <option value="redsea">Red Sea / Bab el-Mandeb</option>
+                    <option value="iran">Iran Nuclear Sites</option>
+                    <option value="dprk">North Korea</option>
+                    <option value="kaliningrad">Kaliningrad</option>
+                </select>
+            </div>
+            <div class="imagery-row">
+                <div class="imagery-label">Layer Opacity</div>
+                <input type="range" class="imagery-slider" id="opacity-slider" min="0" max="100" value="100" onchange="changeOpacity()">
+            </div>
+            <!-- NASA Weather Overlay -->
+            <div class="imagery-row" style="border-top: 1px solid var(--border); margin-top: 8px; padding-top: 8px;">
+                <div class="imagery-label" style="color: var(--accent);">NASA Cloud Overlay</div>
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                    <input type="checkbox" id="nasa-overlay-toggle" onchange="toggleNASAOverlay()" style="width: 16px; height: 16px;">
+                    <span style="font-size: 0.7rem;">Enable</span>
+                </label>
+            </div>
+            <div class="imagery-row" id="nasa-overlay-opacity-row" style="display: none;">
+                <div class="imagery-label">Overlay Opacity</div>
+                <input type="range" class="imagery-slider" id="nasa-overlay-opacity" min="0" max="100" value="50" onchange="changeNASAOverlayOpacity()">
+            </div>
+
+            <!-- Day/Night Overlay -->
+            <div class="imagery-row" style="border-top: 1px solid var(--border); margin-top: 8px; padding-top: 8px;">
+                <div class="imagery-label" style="color: var(--accent);">☀️ Sun/Moon Simulation</div>
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                    <input type="checkbox" id="daynight-toggle" onchange="toggleDayNight()" style="width: 16px; height: 16px;">
+                    <span style="font-size: 0.7rem;">Enable</span>
+                </label>
+            </div>
+
+            <!-- Time Zone Borders -->
+            <div class="imagery-row">
+                <div class="imagery-label" style="color: var(--accent);">🌐 Time Zone Borders</div>
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                    <input type="checkbox" id="timezone-toggle" onchange="toggleTimeZones()" style="width: 16px; height: 16px;">
+                    <span style="font-size: 0.7rem;">Enable</span>
+                </label>
+            </div>
+
+            <!-- Equator Time Display -->
+            <div class="imagery-row">
+                <div class="imagery-label" style="color: var(--accent);">🕐 Equator Time Display</div>
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                    <input type="checkbox" id="equator-time-toggle" onchange="toggleEquatorTime()" style="width: 16px; height: 16px;">
+                    <span style="font-size: 0.7rem;">Enable</span>
+                </label>
+            </div>
+
+            <div class="imagery-btn-row">
+                <button class="imagery-btn" onclick="openWaybackHistory()">Wayback</button>
+                <button class="imagery-btn" onclick="openNASAWorldview()">Worldview</button>
+            </div>
+            <div class="imagery-status" id="imagery-status">
+                Source: <span id="current-source">OpenStreetMap</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right-Click Context Menu -->
+    <div class="context-menu" id="context-menu">
+        <div class="context-menu-header">
+            <span id="context-coords">0.0000, 0.0000</span>
+        </div>
+        <div class="context-menu-item" onclick="openNASAWorldviewAt()">
+            <span class="icon">NASA</span>
+            Open in NASA Worldview
+        </div>
+        <div class="context-menu-item" onclick="openSentinelHub()">
+            <span class="icon">S2</span>
+            Open in Sentinel Hub
+        </div>
+        <div class="context-menu-item" onclick="openGoogleEarthWeb()">
+            <span class="icon">GE</span>
+            Open in Google Earth Web
+        </div>
+        <div class="context-menu-item" onclick="openCopernicus()">
+            <span class="icon">EU</span>
+            Open in Copernicus Browser
+        </div>
+        <div class="context-menu-divider"></div>
+        <div class="context-menu-item" onclick="checkWaybackAt()">
+            <span class="icon">HIST</span>
+            Check ESRI Wayback History
+        </div>
+        <div class="context-menu-item" onclick="copyCoordinates()">
+            <span class="icon">COPY</span>
+            Copy Coordinates
+        </div>
+    </div>
+
+    <!-- Comparison Overlay (for split-screen) -->
+    <div class="compare-overlay" id="compare-overlay">
+        <span class="compare-label">Compare:</span>
+        <input type="range" class="compare-slider" id="compare-slider" min="0" max="100" value="50" oninput="updateCompare()">
+        <button class="imagery-btn" onclick="closeCompare()">Close</button>
+    </div>
+
+    <!-- Detail Modal -->
+    <div class="modal-overlay" id="modal-overlay" onclick="closeModal(event)">
+        <div class="modal" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <span class="modal-title" id="modal-title">Details</span>
+                <button class="modal-close" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="modal-body">
+                <!-- Dynamic content -->
+            </div>
+        </div>
+    </div>
+
+
+    <script defer src="app.js"></script>
+</body>
+</html>
