@@ -55,6 +55,8 @@
         viewer.scene.globe.maximumScreenSpaceError = 2.5; // default 2; 2.5 ≈ slightly fewer tiles
         viewer.scene.globe.tileCacheSize = 100;
         viewer.resolutionScale = 1.0;
+        // Occlude markers/arcs on the far side of the globe (depth-test against it)
+        viewer.scene.globe.depthTestAgainstTerrain = true;
         let perfMode = false;
         function togglePerfMode() {
             perfMode = !perfMode;
@@ -3560,7 +3562,7 @@
                         billboard: {
                             image: img, scale: 0.7,
                             scaleByDistance: new Cesium.NearFarScalar(1e5, 1, 2e7, 0.4),
-                            disableDepthTestDistance: Number.POSITIVE_INFINITY
+                            disableDepthTestDistance: 0
                         }
                     });
                     entity.customData = customData;
@@ -3605,7 +3607,7 @@
                         billboard: {
                             image: img, scale: 0.6,
                             scaleByDistance: new Cesium.NearFarScalar(1e5, 0.9, 2e7, 0.35),
-                            disableDepthTestDistance: Number.POSITIVE_INFINITY
+                            disableDepthTestDistance: 0
                         }
                     });
                     entity.customData = customData;
@@ -4093,7 +4095,7 @@
                     color: Cesium.Color.YELLOW,
                     outlineColor: Cesium.Color.ORANGE,
                     outlineWidth: 1,
-                    disableDepthTestDistance: Number.POSITIVE_INFINITY
+                    disableDepthTestDistance: 0
                 },
                 label: {
                     text: '☀️ SUN',
@@ -4104,7 +4106,7 @@
                     style: Cesium.LabelStyle.FILL_AND_OUTLINE,
                     verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
                     pixelOffset: new Cesium.Cartesian2(0, -15),
-                    disableDepthTestDistance: Number.POSITIVE_INFINITY
+                    disableDepthTestDistance: 0
                 }
             });
         }
@@ -4127,7 +4129,7 @@
                     color: Cesium.Color.LIGHTGRAY,
                     outlineColor: Cesium.Color.WHITE,
                     outlineWidth: 1,
-                    disableDepthTestDistance: Number.POSITIVE_INFINITY
+                    disableDepthTestDistance: 0
                 },
                 label: {
                     text: '🌙 MOON',
@@ -4138,7 +4140,7 @@
                     style: Cesium.LabelStyle.FILL_AND_OUTLINE,
                     verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
                     pixelOffset: new Cesium.Cartesian2(0, -12),
-                    disableDepthTestDistance: Number.POSITIVE_INFINITY
+                    disableDepthTestDistance: 0
                 }
             });
         }
