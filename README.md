@@ -12,6 +12,10 @@ Optional Prometheus + Grafana for metrics.
 ![status](https://img.shields.io/badge/status-operational-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 
+![Strategic OSINT Dashboard](docs/screenshot.jpg)
+
+![demo](docs/demo.gif)
+
 ---
 
 ## Features
