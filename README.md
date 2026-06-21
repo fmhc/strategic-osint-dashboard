@@ -127,6 +127,12 @@ npm test        # smoke test: node --check all modules + boot + assert endpoints
 
 ---
 
+## History
+
+See [CHANGELOG.md](CHANGELOG.md) for a rough development timeline.
+
+---
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
